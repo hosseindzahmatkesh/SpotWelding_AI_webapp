@@ -1,64 +1,71 @@
-<!doctype html>
-<html lang="fa" dir="rtl">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SpotWelding – Web AI Demo</title>
+  <meta charset="UTF-8">
+  <title>Spot Welding Classifier</title>
   <style>
-    body { font-family: sans-serif; background:#0f1115; color:#e5e7eb; margin:0; padding:24px; }
-    .container { max-width: 980px; margin: 0 auto; display:grid; gap:20px; grid-template-columns: 1fr 1fr; }
-    .card { background:#151922; border:1px solid #232838; border-radius:16px; padding:16px; }
-    h1 { margin-top:0; font-size:24px; }
-    label { display:block; font-size:12px; color:#9aa4b2; margin-bottom:6px; }
-    input { width:100%; border-radius:10px; border:1px solid #2a3142; background:#0f131b; color:#e5e7eb; padding:10px 12px; margin-bottom:10px; }
-    button { padding:10px 14px; border-radius:10px; border:0; background:#2563eb; color:white; cursor:pointer; }
-    button.secondary { background:#374151; }
-    .video-wrap { position:relative; border-radius:16px; overflow:hidden; }
-    #overlay { position:absolute; left:10px; top:10px; background:rgba(0,0,0,0.55); padding:8px 10px; border-radius:10px; font-weight:600; }
-    #video { width:100%; height:auto; display:block; background:#000; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .full { grid-column: 1 / -1; }
-    #status { font-size:12px; color:#9aa4b2; }
-    footer { text-align:center; margin-top: 12px; font-size: 12px; color:#6b7280; }
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    canvas { border: 1px solid #ccc; }
+    .inputs { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 500px; margin-left: auto; margin-right: auto; }
+    .inputs label { display: flex; justify-content: space-between; }
+    .result { margin-top: 20px; font-size: 1.2em; }
+    img { margin-top: 20px; max-width: 400px; }
   </style>
 </head>
 <body>
-  <h1>دموی وب اپ تشخیص کیفیت نقطه‌جوش</h1>
-  <div class="container">
-    <div class="card">
-      <div class="video-wrap">
-        <div id="overlay">نتیجه: - | دقت: -</div>
-        <video id="video" autoplay playsinline muted></video>
-      </div>
-      <div style="margin-top:10px; display:flex; gap:8px;">
-        <button id="btn-capture">📸 عکس و پیش‌بینی</button>
-        <button class="secondary" id="btn-stop">⏹ قطع دوربین</button>
-      </div>
-      <p id="status">وضعیت: در انتظار اجازه‌ی دسترسی به دوربین…</p>
-      <canvas id="canvas" style="display:none;"></canvas>
-    </div>
+  <h1>Spot Welding Quality Predictor</h1>
 
-    <div class="card">
-      <div class="row">
-        <div><label>Pressure (PSI)</label><input id="n1" inputmode="decimal" placeholder="مثلاً 1200"></div>
-        <div><label>Welding Time (ms)</label><input id="n2" inputmode="decimal" placeholder="مثلاً 250"></div>
-        <div><label>Angle (Deg)</label><input id="n3" inputmode="decimal" placeholder="مثلاً 45"></div>
-        <div><label>Thickness A (mm)</label><input id="n4" inputmode="decimal" placeholder="مثلاً 1.2"></div>
-        <div><label>Thickness B (mm)</label><input id="n5" inputmode="decimal" placeholder="مثلاً 1.0"></div>
-        <div><label>Material</label><input id="n6" inputmode="decimal" placeholder="کُد عددی ماده"></div>
-        <div><label>Force (N)</label><input id="n7" inputmode="decimal" placeholder="مثلاً 3000"></div>
-        <div><label>Current (A)</label><input id="n8" inputmode="decimal" placeholder="مثلاً 8000"></div>
-        <div class="full"><button id="btn-predict">🚀 پیش‌بینی با همان فریم جاری</button></div>
-      </div>
-      <p style="margin-top:8px;">راهنما: برای استفاده روی موبایل خارج از <code>localhost</code> باید سایت شما <b>HTTPS</b> باشد تا مرورگر اجازه‌ی دوربین بدهد.</p>
-    </div>
+  <video id="video" width="{{ imgw }}" height="{{ imgh }}" autoplay></video>
+  <canvas id="canvas" width="{{ imgw }}" height="{{ imgh }}" style="display:none;"></canvas>
+
+  <div class="inputs">
+    <label>Pressure (PSI): <input type="number" id="num0"></label>
+    <label>Welding Time (ms): <input type="number" id="num1"></label>
+    <label>Angle (Deg): <input type="number" id="num2"></label>
+    <label>Thickness A (mm): <input type="number" id="num3" step="0.001"></label>
+    <label>Thickness B (mm): <input type="number" id="num4" step="0.001"></label>
+    <label>Material: <input type="number" id="num5"></label>
+    <label>Force (N): <input type="number" id="num6" step="0.01"></label>
+    <label>Current (A): <input type="number" id="num7" step="0.01"></label>
   </div>
-  <footer>© Web demo – SpotWelding</footer>
+
+  <button onclick="predict()">Predict</button>
+
+  <div class="result" id="result"></div>
+  <img id="processed" alt="Processed Image will appear here">
+
   <script>
-    window.MODEL_W = {{ imgw|tojson }};
-    window.MODEL_H = {{ imgh|tojson }};
-    window.CLASS_LABELS = {{ labels|tojson }};
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const processedImg = document.getElementById('processed');
+
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      video.srcObject = stream;
+    });
+
+    async function predict() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg');
+
+      const numbers = [];
+      for (let i = 0; i < 8; i++) {
+        numbers.push(document.getElementById('num' + i).value);
+      }
+
+      const resp = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl, numbers: numbers })
+      });
+
+      const result = await resp.json();
+      document.getElementById('result').innerText =
+        "Prediction: " + result.label + " (p=" + result.prob.toFixed(3) + ")";
+      if (result.processed_image) {
+        processedImg.src = result.processed_image;
+      }
+    }
   </script>
-  <script src="/static/script.js"></script>
 </body>
 </html>
