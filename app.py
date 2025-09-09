@@ -84,7 +84,7 @@ def run_inference(numeric_vector,imgB,imgF):
             interpreter.set_tensor(idx, arr)
         else:
             vec = numeric_vector.astype(d["dtype"])[None, :]
-            interpreter.set_tensor(idx, vec)
+            interpreter.set_tensor(vec, idx)
     interpreter.invoke()
     out = interpreter.get_tensor(output_details[0]["index"])
     out = np.squeeze(out)
