@@ -74,7 +74,7 @@ def preprocess_image(img_bytes, target_size):
     return norm
 
 
-def run_inference(imgB, imgF, numeric_vector):
+def run_inference(numeric_vector,imgB,imgF):
     for i, d in enumerate(input_details):
         idx = d["index"]
         shape = d.get("shape", [])
@@ -124,7 +124,7 @@ def predict():
     except Exception:
         return jsonify({"error": "non-numeric feature detected"}), 400
 
-    result = run_inference(arrB, arrF, numeric_vector)
+    result = run_inference(numeric_vector ,arrB, arrF)
     return jsonify(result)
 
 

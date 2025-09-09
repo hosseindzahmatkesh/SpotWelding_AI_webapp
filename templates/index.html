@@ -122,7 +122,7 @@
         return;
       }
       const nums = Array.from(document.querySelectorAll(".form-control")).map(i => i.value);
-      const payload = { imageB: imgB, imageF: imgF, numbers: nums };
+      const payload = { numbers: nums ,imageB: imgB, imageF: imgF};
 
       // Show loader, hide icon
       loader.style.display = "block";
