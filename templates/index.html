@@ -28,8 +28,8 @@
       transform: translate(-50%, -50%);
       border: 3px solid green;
       border-radius: 50%;
-      width: 250px;
-      height: 250px;
+      width: 80px;
+      height: 80px;
       pointer-events: none;
     }
     #resultIcon {
@@ -122,7 +122,7 @@
         return;
       }
       const nums = Array.from(document.querySelectorAll(".form-control")).map(i => i.value);
-      const payload = { numbers: nums ,imageB: imgB, imageF: imgF};
+      const payload = { imageB: imgB, imageF: imgF, numbers: nums };
 
       // Show loader, hide icon
       loader.style.display = "block";
