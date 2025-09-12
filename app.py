@@ -66,7 +66,7 @@ def preprocess_image(img_bytes, target_size):
     # --- Canny ---
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
-    edges = cv2.Canny(thresh, 700, 1000)
+    edges = cv2.Canny(thresh, 100, 200)
 
     resized = cv2.resize(edges, target_size)
     norm = resized / 255.0
