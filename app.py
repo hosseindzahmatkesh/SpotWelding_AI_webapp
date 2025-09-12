@@ -66,9 +66,9 @@ def preprocess_image(img_bytes, target_size):
     # --- Canny ---
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
-    edges = cv2.Canny(thresh, 3000, 4000)
+    #edges = cv2.Canny(thresh, 3000, 4000)
 
-    resized = cv2.resize(edges, target_size)
+    resized = cv2.resize(thresh, target_size)
     norm = resized / 255.0
     norm = norm[:, :, np.newaxis]  # add channel
     return norm
@@ -85,6 +85,14 @@ def run_inference(numeric_vector, imgB, imgF):
         idx = d["index"]
         shape = d.get("shape", [])
         if len(shape) == 2:  # numeric input
+            numeric_vector[0]=(numeric_vector[0]-35)/(95-35)
+            numeric_vector[1]=(numeric_vector[1]-200)/(1500-200)
+            numeric_vector[2]=(numeric_vector[2])/(15)
+            numeric_vector[3]=(numeric_vector[3]-0.61)/(1.057-0.61)
+            numeric_vector[4]=(numeric_vector[4]-0.608)/(1.01-0.608)
+            numeric_vector[5]=numeric_vector[5]
+            numeric_vector[6]=(numeric_vector[6])/(133.53)
+            numeric_vector[7]=(numeric_vector[7])/(5009.43)
             vec = numeric_vector.astype(d["dtype"])[None, :]
             interpreter.set_tensor(idx, vec)
         elif len(shape) == 4:  # image input
