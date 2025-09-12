@@ -41,26 +41,30 @@ def required_image_size():
     return 256, 256
 
 
-def preprocess_image(img_bytes, target_size):
+def preprocess_image(img_bytes, target_size, return_stage="final"):
     """
-    Decode base64 image, convert to grayscale,
-    blur + threshold, resize, normalize.
+    Decode base64 image → grayscale → blur + threshold → resize → normalize
+    return_stage:
+        "final" → آماده برای مدل
+        "preview" → قبل از normalize (uint8 برای نمایش)
     """
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     arr = np.array(img)
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
 
-    # Blur + Threshold
+    # blur + threshold
     blur = cv2.GaussianBlur(gray, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    # Resize to model input
     resized = cv2.resize(thresh, target_size)
 
-    # Normalize
-    norm = resized / 255.0
-    norm = norm[:, :, np.newaxis]  # add channel
-    return norm
+    if return_stage == "preview":
+        return resized  # uint8
+    else:
+        norm = resized / 255.0
+        norm = norm[:, :, np.newaxis]
+        return norm
+
 
 
 def run_inference(numeric_vector, imgB, imgF):
