@@ -125,13 +125,13 @@ def preview():
         return jsonify({"error": "invalid image payload"}), 400
 
     H, W = required_image_size()
-    arr = preprocess_image(raw, (W, H))
+    arr = preprocess_image(raw, (W, H), return_stage="preview")
 
-    # arr رو دوباره به base64 تبدیل کنیم برای نمایش
-    arr_uint8 = (arr.squeeze() * 255).astype(np.uint8)
-    _, buf = cv2.imencode(".png", arr_uint8)
+    # arr → base64
+    _, buf = cv2.imencode(".png", arr)
     b64 = base64.b64encode(buf).decode("utf-8")
     return jsonify({"processed": "data:image/png;base64," + b64})
+
 
 
 @app.route("/predict", methods=["POST"])
