@@ -13,7 +13,7 @@
       height: 100vh;
     }
     .card {
-      width: 650px;
+      width: 600px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
@@ -28,23 +28,9 @@
       transform: translate(-50%, -50%);
       border: 3px solid green;
       border-radius: 50%;
-      width: 250px;
-      height: 250px;
+      width: 80px;
+      height: 80px;
       pointer-events: none;
-    }
-    #previewWrapper {
-      margin-top: 15px;
-      display: flex;
-      gap: 15px;
-      justify-content: center;
-    }
-    .preview {
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      width: 120px;
-      height: 120px;
-      object-fit: contain;
-      background: #eee;
     }
     #resultIcon {
       position: absolute;
@@ -55,6 +41,20 @@
     }
     #loader {
       display: none;
+    }
+    .preview-box {
+      width: 120px;
+      height: 120px;
+      border: 2px dashed #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 5px;
+      overflow: hidden;
+    }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 100%;
     }
   </style>
 </head>
@@ -76,14 +76,14 @@
       <button id="captureF" class="btn btn-secondary">Capture Image F</button>
     </div>
 
-    <!-- Preview processed images -->
-    <div id="previewWrapper">
-      <img id="previewB" class="preview" alt="Preview B">
-      <img id="previewF" class="preview" alt="Preview F">
+    <!-- Preview of processed images -->
+    <div class="d-flex justify-content-center">
+      <div class="preview-box"><img id="previewB" alt="Preview B"></div>
+      <div class="preview-box"><img id="previewF" alt="Preview F"></div>
     </div>
 
     <!-- Numeric Inputs -->
-    <div class="row g-2 mt-3">
+    <div class="row g-2 mt-2">
       <div class="col-6"><input class="form-control" placeholder="Pressure (PSI)"></div>
       <div class="col-6"><input class="form-control" placeholder="Welding Time (ms)"></div>
       <div class="col-6"><input class="form-control" placeholder="Angle (Deg)"></div>
@@ -108,8 +108,6 @@
     const canvas = document.getElementById('canvas');
     const loader = document.getElementById('loader');
     const resultIcon = document.getElementById('resultIcon');
-    const previewB = document.getElementById('previewB');
-    const previewF = document.getElementById('previewF');
     let imgB = null, imgF = null;
 
     // Ask for rear camera
@@ -121,7 +119,7 @@
       });
 
     // Capture helper
-    function captureRawImage() {
+    function captureImage() {
       const ctx = canvas.getContext('2d');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -129,30 +127,25 @@
       return canvas.toDataURL("image/png");
     }
 
-    // Function to send raw image to backend for preprocessing
-    async function preprocessAndPreview(rawImg, which) {
+    async function sendPreview(imageData, targetId) {
       const res = await fetch("/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: rawImg })
+        body: JSON.stringify({ image: imageData })
       });
       const data = await res.json();
-      if (which === "B") {
-        imgB = data.processed;
-        previewB.src = data.processed;
-      } else {
-        imgF = data.processed;
-        previewF.src = data.processed;
+      if (data.processed) {
+        document.getElementById(targetId).src = data.processed;
       }
     }
 
-    document.getElementById("captureB").onclick = () => {
-      const raw = captureRawImage();
-      preprocessAndPreview(raw, "B");
+    document.getElementById("captureB").onclick = async () => {
+      imgB = captureImage();
+      await sendPreview(imgB, "previewB");
     };
-    document.getElementById("captureF").onclick = () => {
-      const raw = captureRawImage();
-      preprocessAndPreview(raw, "F");
+    document.getElementById("captureF").onclick = async () => {
+      imgF = captureImage();
+      await sendPreview(imgF, "previewF");
     };
 
     document.getElementById("predictBtn").onclick = async () => {
