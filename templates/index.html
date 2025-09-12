@@ -13,7 +13,7 @@
       height: 100vh;
     }
     .card {
-      width: 600px;
+      width: 650px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
@@ -31,6 +31,20 @@
       width: 250px;
       height: 250px;
       pointer-events: none;
+    }
+    #previewWrapper {
+      margin-top: 15px;
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+    }
+    .preview {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      width: 120px;
+      height: 120px;
+      object-fit: contain;
+      background: #eee;
     }
     #resultIcon {
       position: absolute;
@@ -62,8 +76,14 @@
       <button id="captureF" class="btn btn-secondary">Capture Image F</button>
     </div>
 
+    <!-- Preview processed images -->
+    <div id="previewWrapper">
+      <img id="previewB" class="preview" alt="Preview B">
+      <img id="previewF" class="preview" alt="Preview F">
+    </div>
+
     <!-- Numeric Inputs -->
-    <div class="row g-2">
+    <div class="row g-2 mt-3">
       <div class="col-6"><input class="form-control" placeholder="Pressure (PSI)"></div>
       <div class="col-6"><input class="form-control" placeholder="Welding Time (ms)"></div>
       <div class="col-6"><input class="form-control" placeholder="Angle (Deg)"></div>
@@ -88,6 +108,8 @@
     const canvas = document.getElementById('canvas');
     const loader = document.getElementById('loader');
     const resultIcon = document.getElementById('resultIcon');
+    const previewB = document.getElementById('previewB');
+    const previewF = document.getElementById('previewF');
     let imgB = null, imgF = null;
 
     // Ask for rear camera
@@ -99,7 +121,7 @@
       });
 
     // Capture helper
-    function captureImage() {
+    function captureRawImage() {
       const ctx = canvas.getContext('2d');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -107,13 +129,30 @@
       return canvas.toDataURL("image/png");
     }
 
+    // Function to send raw image to backend for preprocessing
+    async function preprocessAndPreview(rawImg, which) {
+      const res = await fetch("/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: rawImg })
+      });
+      const data = await res.json();
+      if (which === "B") {
+        imgB = data.processed;
+        previewB.src = data.processed;
+      } else {
+        imgF = data.processed;
+        previewF.src = data.processed;
+      }
+    }
+
     document.getElementById("captureB").onclick = () => {
-      imgB = captureImage();
-      alert("Captured Image B ✅");
+      const raw = captureRawImage();
+      preprocessAndPreview(raw, "B");
     };
     document.getElementById("captureF").onclick = () => {
-      imgF = captureImage();
-      alert("Captured Image F ✅");
+      const raw = captureRawImage();
+      preprocessAndPreview(raw, "F");
     };
 
     document.getElementById("predictBtn").onclick = async () => {
@@ -124,7 +163,6 @@
       const nums = Array.from(document.querySelectorAll(".form-control")).map(i => i.value);
       const payload = { imageB: imgB, imageF: imgF, numbers: nums };
 
-      // Show loader, hide icon
       loader.style.display = "block";
       resultIcon.style.display = "none";
 
@@ -135,10 +173,8 @@
       });
       const data = await res.json();
 
-      // Hide loader
       loader.style.display = "none";
 
-      // Show result icon
       if (data.label === "Good") {
         resultIcon.innerHTML = "✅";
         resultIcon.style.color = "green";

@@ -46,7 +46,7 @@ def required_image_size():
 
 def preprocess_image(img_bytes, target_size):
     """
-    Decode base64 image, keep inside circle, make outside gray,
+    Decode base64 image, apply circle mask (inside: real, outside: gray),
     then blur, threshold, Canny, resize, normalize.
     """
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -54,13 +54,12 @@ def preprocess_image(img_bytes, target_size):
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
     h, w = gray.shape[:2]
 
-    # --- Circle mask: same as overlayCircle in HTML (80px → radius 40px) ---
+    # --- Circle mask: match overlay ---
     mask = np.zeros_like(gray, dtype=np.uint8)
     center = (w // 2, h // 2)
     radius = 125
     cv2.circle(mask, center, radius, 255, -1)
 
-    # بیرون دایره → خاکستری
     gray_bg = np.full_like(gray, 128)
     masked = np.where(mask == 255, gray, gray_bg)
 
@@ -77,34 +76,24 @@ def preprocess_image(img_bytes, target_size):
 
 def run_inference(numeric_vector, imgB, imgF):
     """
-    Feed tensors in exact order:
-    1) numeric vector
-    2) image B
-    3) image F
+    Order must be:
+    1) numeric_vector
+    2) imageB
+    3) imageF
     """
-    feed_idx = 0
-    # ---- numeric input ----
-    for d in input_details:
-        shape = d.get("shape", [])
+    for i, d in enumerate(input_details):
         idx = d["index"]
-        if hasattr(shape, "__len__") and len(shape) == 2:
+        shape = d.get("shape", [])
+        if len(shape) == 2:  # numeric input
             vec = numeric_vector.astype(d["dtype"])[None, :]
             interpreter.set_tensor(idx, vec)
-            feed_idx += 1
-            break  # only once
-
-    # ---- images ----
-    for d in input_details:
-        shape = d.get("shape", [])
-        idx = d["index"]
-        if hasattr(shape, "__len__") and len(shape) == 4:
-            if feed_idx == 1:
+        elif len(shape) == 4:  # image input
+            if i == 1:   # بعد از عددی → این imgB است
                 arr = imgB
-            else:
+            else:        # بعدی → imgF است
                 arr = imgF
             arr = arr.astype(np.float32)[None, :, :, :]
             interpreter.set_tensor(idx, arr)
-            feed_idx += 1
 
     interpreter.invoke()
     out = interpreter.get_tensor(output_details[0]["index"])
@@ -123,6 +112,22 @@ def index():
     h, w = required_image_size()
     return render_template("index.html", imgw=w, imgh=h, labels=CLASS_LABELS)
 
+@app.route("/preview", methods=["POST"])
+def preview():
+    data = request.json
+    try:
+        raw = base64.b64decode(data["image"].split(",")[1])
+    except Exception:
+        return jsonify({"error": "invalid image payload"}), 400
+
+    H, W = required_image_size()
+    arr = preprocess_image(raw, (W, H))
+
+    # arr رو دوباره به base64 تبدیل کنیم برای نمایش
+    arr_uint8 = (arr.squeeze() * 255).astype(np.uint8)
+    _, buf = cv2.imencode(".png", arr_uint8)
+    b64 = base64.b64encode(buf).decode("utf-8")
+    return jsonify({"processed": "data:image/png;base64," + b64})
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -141,9 +146,7 @@ def predict():
     if not isinstance(nums, list) or len(nums) != 8:
         return jsonify({"error": "need 8 numeric features"}), 400
     try:
-        numeric_vector = np.array(
-            [float(x) if x != "" else 0.0 for x in nums], dtype=np.float32
-        )
+        numeric_vector = np.array([float(x) if x != "" else 0.0 for x in nums], dtype=np.float32)
     except Exception:
         return jsonify({"error": "non-numeric feature detected"}), 400
 
