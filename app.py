@@ -134,7 +134,7 @@ def preview():
     # arr → base64
     _, buf = cv2.imencode(".png", arr)
     b64 = base64.b64encode(buf).decode("utf-8")
-    return jsonify({"processed": "data:image/png;base64," + b64})
+    return jsonify({"processed": "data:image/png;base64," + arr})
 
 
 
