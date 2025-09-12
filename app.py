@@ -37,56 +37,30 @@ output_details = interpreter.get_output_details()
 # Utils
 # -------------------
 def required_image_size():
-    # ولی ما در نهایت 256×256 می‌گیریم
+    # ما همیشه می‌خوایم 256x256 باشه
     return 256, 256
 
 
-def preprocess_image(img_bytes, target_size=(256, 256)):
+def preprocess_image(img_bytes, target_size):
     """
-    Decode base64 image, apply circle mask (inside: real, outside: gray),
-    then blur + threshold, resize to 256x256, normalize.
+    Decode base64 image, convert to grayscale,
+    blur + threshold, resize, normalize.
     """
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     arr = np.array(img)
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    h, w = gray.shape[:2]
 
-    # --- Circle mask (مطابق ویدیو overlay) ---
-    mask = np.zeros_like(gray, dtype=np.uint8)
-    center = (w // 2, h // 2)
-    radius = min(h, w) // 6  # شعاع متناسب با تصویر
-    cv2.circle(mask, center, radius, 255, -1)
-
-    gray_bg = np.full_like(gray, 128)
-    masked = np.where(mask == 255, gray, gray_bg)
-
-    # --- Blur + Threshold ---
-    blur = cv2.GaussianBlur(masked, (3, 3), 0)
+    # Blur + Threshold
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    # --- Resize to 256x256 ---
+    # Resize to model input
     resized = cv2.resize(thresh, target_size)
 
-    # --- Normalize 0~1 + add channel ---
+    # Normalize
     norm = resized / 255.0
-    norm = norm[:, :, np.newaxis]
+    norm = norm[:, :, np.newaxis]  # add channel
     return norm
-
-
-def normalize_numeric(vec):
-    """
-    Apply feature-wise normalization for the 8 numeric inputs.
-    """
-    v = vec.copy()
-    v[0] = (v[0] - 35) / (95 - 35)        # Pressure
-    v[1] = (v[1] - 200) / (1500 - 200)    # Welding Time
-    v[2] = v[2] / 15                      # Angle
-    v[3] = (v[3] - 0.61) / (1.057 - 0.61) # Thickness A
-    v[4] = (v[4] - 0.608) / (1.01 - 0.608)# Thickness B
-    v[5] = v[5]                           # Material (اگر categorical باشه باید one-hot بشه)
-    v[6] = v[6] / 133.53                  # Force
-    v[7] = v[7] / 5009.43                 # Current
-    return v
 
 
 def run_inference(numeric_vector, imgB, imgF):
@@ -99,14 +73,27 @@ def run_inference(numeric_vector, imgB, imgF):
     for i, d in enumerate(input_details):
         idx = d["index"]
         shape = d.get("shape", [])
+
         if len(shape) == 2:  # numeric input
-            vnorm = normalize_numeric(numeric_vector)
-            vec = vnorm.astype(d["dtype"])[None, :]
+            # -------------------
+            # Normalization
+            # -------------------
+            numeric_vector[0] = (numeric_vector[0] - 35) / (95 - 35)       # Pressure
+            numeric_vector[1] = (numeric_vector[1] - 200) / (1500 - 200)   # Welding Time
+            numeric_vector[2] = numeric_vector[2] / 15                     # Angle
+            numeric_vector[3] = (numeric_vector[3] - 0.61) / (1.057 - 0.61) # Thickness A
+            numeric_vector[4] = (numeric_vector[4] - 0.608) / (1.01 - 0.608) # Thickness B
+            numeric_vector[5] = numeric_vector[5]                           # Material (assume already categorical/encoded)
+            numeric_vector[6] = numeric_vector[6] / 133.53                  # Force
+            numeric_vector[7] = numeric_vector[7] / 5009.43                 # Current
+
+            vec = numeric_vector.astype(d["dtype"])[None, :]
             interpreter.set_tensor(idx, vec)
+
         elif len(shape) == 4:  # image input
-            if i == 1:
+            if i == 1:   # بعد از عددی → این imgB است
                 arr = imgB
-            else:
+            else:        # بعدی → imgF است
                 arr = imgF
             arr = arr.astype(np.float32)[None, :, :, :]
             interpreter.set_tensor(idx, arr)
@@ -137,7 +124,8 @@ def preview():
     except Exception:
         return jsonify({"error": "invalid image payload"}), 400
 
-    arr = preprocess_image(raw, (256, 256))
+    H, W = required_image_size()
+    arr = preprocess_image(raw, (W, H))
 
     # arr رو دوباره به base64 تبدیل کنیم برای نمایش
     arr_uint8 = (arr.squeeze() * 255).astype(np.uint8)
@@ -155,8 +143,9 @@ def predict():
     except Exception:
         return jsonify({"error": "invalid image payload"}), 400
 
-    arrB = preprocess_image(imgB_data, (256, 256))
-    arrF = preprocess_image(imgF_data, (256, 256))
+    H, W = required_image_size()
+    arrB = preprocess_image(imgB_data, (W, H))
+    arrF = preprocess_image(imgF_data, (W, H))
 
     nums = data.get("numbers", [])
     if not isinstance(nums, list) or len(nums) != 8:

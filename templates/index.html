@@ -28,33 +28,40 @@
       transform: translate(-50%, -50%);
       border: 3px solid green;
       border-radius: 50%;
-      width: 80px;
-      height: 80px;
+      width: 125px;
+      height: 125px;
       pointer-events: none;
     }
     #resultIcon {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      font-size: 48px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      font-weight: bold;
+      display: none;
+      text-shadow: 1px 1px 4px #000;
+    }
+    #resultProb {
+      position: absolute;
+      top: calc(50% + 40px);
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      text-shadow: 1px 1px 4px #000;
       display: none;
     }
     #loader {
       display: none;
     }
-    .preview-box {
-      width: 120px;
-      height: 120px;
-      border: 2px dashed #ccc;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 5px;
-      overflow: hidden;
-    }
-    .preview-box img {
-      max-width: 100%;
-      max-height: 100%;
+    .preview {
+      width: 100px;
+      height: 100px;
+      object-fit: contain;
+      border: 1px solid #ccc;
+      border-radius: 8px;
     }
   </style>
 </head>
@@ -67,6 +74,7 @@
       <video id="video" width="100%" autoplay></video>
       <div id="overlayCircle"></div>
       <div id="resultIcon"></div>
+      <div id="resultProb"></div>
     </div>
     <canvas id="canvas" style="display:none;"></canvas>
 
@@ -76,14 +84,14 @@
       <button id="captureF" class="btn btn-secondary">Capture Image F</button>
     </div>
 
-    <!-- Preview of processed images -->
-    <div class="d-flex justify-content-center">
-      <div class="preview-box"><img id="previewB" alt="Preview B"></div>
-      <div class="preview-box"><img id="previewF" alt="Preview F"></div>
+    <!-- Preview of captured images -->
+    <div class="d-flex justify-content-around mb-3">
+      <img id="previewB" class="preview" src="" alt="Preview B">
+      <img id="previewF" class="preview" src="" alt="Preview F">
     </div>
 
     <!-- Numeric Inputs -->
-    <div class="row g-2 mt-2">
+    <div class="row g-2">
       <div class="col-6"><input class="form-control" placeholder="Pressure (PSI)"></div>
       <div class="col-6"><input class="form-control" placeholder="Welding Time (ms)"></div>
       <div class="col-6"><input class="form-control" placeholder="Angle (Deg)"></div>
@@ -108,6 +116,7 @@
     const canvas = document.getElementById('canvas');
     const loader = document.getElementById('loader');
     const resultIcon = document.getElementById('resultIcon');
+    const resultProb = document.getElementById('resultProb');
     let imgB = null, imgF = null;
 
     // Ask for rear camera
@@ -127,25 +136,13 @@
       return canvas.toDataURL("image/png");
     }
 
-    async function sendPreview(imageData, targetId) {
-      const res = await fetch("/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: imageData })
-      });
-      const data = await res.json();
-      if (data.processed) {
-        document.getElementById(targetId).src = data.processed;
-      }
-    }
-
-    document.getElementById("captureB").onclick = async () => {
+    document.getElementById("captureB").onclick = () => {
       imgB = captureImage();
-      await sendPreview(imgB, "previewB");
+      document.getElementById("previewB").src = imgB;
     };
-    document.getElementById("captureF").onclick = async () => {
+    document.getElementById("captureF").onclick = () => {
       imgF = captureImage();
-      await sendPreview(imgF, "previewF");
+      document.getElementById("previewF").src = imgF;
     };
 
     document.getElementById("predictBtn").onclick = async () => {
@@ -156,8 +153,10 @@
       const nums = Array.from(document.querySelectorAll(".form-control")).map(i => i.value);
       const payload = { imageB: imgB, imageF: imgF, numbers: nums };
 
+      // Show loader, hide icon/prob
       loader.style.display = "block";
       resultIcon.style.display = "none";
+      resultProb.style.display = "none";
 
       const res = await fetch("/predict", {
         method: "POST",
@@ -166,11 +165,13 @@
       });
       const data = await res.json();
 
+      // Hide loader
       loader.style.display = "none";
 
+      // Show result icon + probability
       if (data.label === "Good") {
         resultIcon.innerHTML = "✅";
-        resultIcon.style.color = "green";
+        resultIcon.style.color = "lime";
       } else if (data.label === "Bad") {
         resultIcon.innerHTML = "❌";
         resultIcon.style.color = "red";
@@ -178,7 +179,11 @@
         resultIcon.innerHTML = "⚠️";
         resultIcon.style.color = "orange";
       }
+
+      resultProb.innerHTML = (data.prob * 100).toFixed(1) + "%";
+
       resultIcon.style.display = "block";
+      resultProb.style.display = "block";
     };
   </script>
 </body>
