@@ -51,6 +51,19 @@ def required_image_size():
             return int(shape[1]), int(shape[2])
     return 256, 256
 
+def resize_with_padding(img, target_size=(256, 256)):
+    """Resize while keeping aspect ratio and padding with gray"""
+    h, w = img.shape[:2]
+    th, tw = target_size
+    scale = min(tw / w, th / h)
+    nw, nh = int(w * scale), int(h * scale)
+    resized = cv2.resize(img, (nw, nh))
+    # create gray canvas
+    canvas = np.full((th, tw), 128, dtype=img.dtype)
+    top = (th - nh) // 2
+    left = (tw - nw) // 2
+    canvas[top:top+nh, left:left+nw] = resized
+    return canvas
 
 def apply_circle_gray_background(gray_img, center=None, radius=None):
     """Make outside of circle gray (128) and keep inside real gray image."""
@@ -58,7 +71,7 @@ def apply_circle_gray_background(gray_img, center=None, radius=None):
     if center is None:
         center = (w // 2, h // 2)
     if radius is None:
-        radius = 110 #min(h, w) // 2  # default radius (tweakable)
+        radius = 110 #min(h, w) // 4  # default radius (tweakable)
     mask = np.zeros_like(gray_img, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     gray_bg = np.full_like(gray_img, 128)
@@ -86,7 +99,7 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
     h, w = gray.shape[:2]
     # choose radius relative to smaller dimension if not provided
     if circle_radius is None:
-        radius = 110 #min(h, w) // 2  # tweak if you need bigger/smaller
+        radius = 180 #min(h, w) // 4  # tweak if you need bigger/smaller
     else:
         radius = circle_radius
 
@@ -100,15 +113,19 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
     #_, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
     # resize to model expected
-    H, W = target_size
-    resized = cv2.resize(thresh, (W, H))
+    # --- Resize with padding to keep aspect ratio ---
+    processed = resize_with_padding(thresh, target_size)
+    #H, W = target_size
+    #resized = cv2.resize(thresh, (W, H))
 
     # normalized (0..1) for model
-    norm = resized.astype(np.float32) / 255.0
-    norm = np.expand_dims(norm, axis=-1)  # (H, W, 1)
+    norm = processed / 255.0
+    norm = norm[:, :, np.newaxis]
+    #norm = resized.astype(np.float32) / 255.0
+    #norm = np.expand_dims(norm, axis=-1)  # (H, W, 1)
 
     # preview base64 PNG (uint8)
-    _, buf = cv2.imencode(".png", resized.astype(np.uint8))
+    _, buf = cv2.imencode(".png", processed.astype(np.uint8))
     b64 = base64.b64encode(buf).decode("utf-8")
     preview_dataurl = "data:image/png;base64," + b64
 
