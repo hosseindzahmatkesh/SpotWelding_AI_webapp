@@ -1,42 +1,50 @@
-import gdown
+# app.py
 import os
-import cv2
+import io
+import base64
 import numpy as np
-from flask import Flask, render_template, request, jsonify
-from PIL import Image
-import base64, io
-
-# -------------------
-# Download model if missing
-# -------------------
-MODEL_PATH = "model.tflite"
-MODEL_URL = "https://drive.google.com/uc?id=1-e7UBpGkYgQlrfrOfpP9TtJ7UZt8A2rx"
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model...")
-    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-
-# -------------------
-# Load TFLite
-# -------------------
+import cv2
+from flask import Flask, request, jsonify, render_template
+# tflite runtime fallback
 try:
     import tflite_runtime.interpreter as tflite
 except Exception:
     import tensorflow as tf
     tflite = tf.lite
 
+# optional: gdown to auto-download model if missing
+try:
+    import gdown
+except Exception:
+    gdown = None
+
 app = Flask(__name__)
 
-CLASS_LABELS = ["Bad", "Good", "Explode"]
+MODEL_PATH = "model.tflite"
+MODEL_GDRIVE_URL = "https://drive.google.com/uc?id=1-e7UBpGkYgQlrfrOfpP9TtJ7UZt8A2rx"
+
+# download model if missing (optional)
+if not os.path.exists(MODEL_PATH) and gdown is not None:
+    print("Downloading model...")
+    gdown.download(MODEL_GDRIVE_URL, MODEL_PATH, quiet=False)
+
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(f"{MODEL_PATH} not found. Put your tflite model at project root or enable gdown.")
+
+# load interpreter
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
+CLASS_LABELS = ["Bad", "Good", "Explode"]
+
 
 # -------------------
-# Utils
+# Utilities / preprocessing
 # -------------------
 def required_image_size():
+    # find first 4D input shape to get target HW (height,width)
     for d in input_details:
         shape = d.get("shape", [])
         if hasattr(shape, "__len__") and len(shape) == 4:
@@ -44,86 +52,135 @@ def required_image_size():
     return 256, 256
 
 
-def preprocess_image(img_bytes, target_size):
-    """
-    Decode base64 image, apply circle mask (inside: real, outside: gray),
-    then blur + threshold, resize, normalize.
-    """
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    arr = np.array(img)
-    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    h, w = gray.shape[:2]
-
-    # --- Circle mask: match overlay ---
-    mask = np.zeros_like(gray, dtype=np.uint8)
-    center = (w // 2, h // 2)
-    radius = 125
+def apply_circle_gray_background(gray_img, center=None, radius=None):
+    """Make outside of circle gray (128) and keep inside real gray image."""
+    h, w = gray_img.shape[:2]
+    if center is None:
+        center = (w // 2, h // 2)
+    if radius is None:
+        radius = min(h, w) // 4  # default radius (tweakable)
+    mask = np.zeros_like(gray_img, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
+    gray_bg = np.full_like(gray_img, 128)
+    masked = np.where(mask == 255, gray_img, gray_bg)
+    return masked
 
-    gray_bg = np.full_like(gray, 128)
-    masked = np.where(mask == 255, gray, gray_bg)
 
-    # --- Preprocess ---
+def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None):
+    """
+    Decode base64 bytes -> RGB -> gray -> apply circle-gray-bg -> blur -> threshold
+    -> resize -> normalize (0..1) -> add channel
+    Returns: (normalized_array, preview_base64_png)
+    """
+    # decode bytes -> BGR array using cv2.imdecode
+    try:
+        arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            raise ValueError("cv2.imdecode returned None")
+    except Exception as e:
+        raise RuntimeError(f"Failed decode image bytes: {e}")
+
+    # convert to gray
+    gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+
+    h, w = gray.shape[:2]
+    # choose radius relative to smaller dimension if not provided
+    if circle_radius is None:
+        radius = min(h, w) // 4  # tweak if you need bigger/smaller
+    else:
+        radius = circle_radius
+
+    center = (w // 2, h // 2)
+    masked = apply_circle_gray_background(gray, center=center, radius=radius)
+
+    # blur + threshold (this produces the 'thresholded & slightly smooth' look)
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    # Resize
-    resized = cv2.resize(thresh, target_size)
+    # resize to model expected
+    H, W = target_size
+    resized = cv2.resize(thresh, (W, H))
 
-    # Normalize
-    norm = resized / 255.0
-    norm = norm[:, :, np.newaxis]  # add channel
+    # normalized (0..1) for model
+    norm = resized.astype(np.float32) / 255.0
+    norm = np.expand_dims(norm, axis=-1)  # (H, W, 1)
 
-    # Also return a preview image (base64)
-    arr_uint8 = resized.astype(np.uint8)
-    _, buf = cv2.imencode(".png", arr_uint8)
+    # preview base64 PNG (uint8)
+    _, buf = cv2.imencode(".png", resized.astype(np.uint8))
     b64 = base64.b64encode(buf).decode("utf-8")
+    preview_dataurl = "data:image/png;base64," + b64
 
-    return norm, "data:image/png;base64," + b64
+    return norm, preview_dataurl
 
 
-def run_inference(numeric_vector, imgB, imgF):
+# -------------------
+# Inference (with normalization of numeric features)
+# -------------------
+def run_inference_and_debug(numeric_vector, imgB_arr, imgF_arr):
     """
-    Order must be:
-    1) numeric_vector
-    2) imageB
-    3) imageF
+    numeric_vector: numpy array shape (8,)
+    imgB_arr, imgF_arr: arrays shape (H,W,1) normalized 0..1
+    The function sets tensors in the order expected by the interpreter based on input_details.
+    It also applies the exact normalization formulas you specified before.
+    Returns: result_dict, normalized_vector
     """
+    numeric_vector = numeric_vector.astype(np.float32).copy()
+    # print before normalization
+    print("Numeric before normalization:", numeric_vector.tolist())
+
+    # APPLY YOUR NORMALIZATION (the formulas you provided earlier)
+    # I keep them exactly as you wrote — tweak if ranges differ
+    try:
+        # avoid changing original passed array unexpectedly: work on copy (done above)
+        numeric_vector[0] = (numeric_vector[0] - 35) / (95 - 35)
+        numeric_vector[1] = (numeric_vector[1] - 200) / (1500 - 200)
+        numeric_vector[2] = (numeric_vector[2]) / 15.0
+        numeric_vector[3] = (numeric_vector[3] - 0.61) / (1.057 - 0.61)
+        numeric_vector[4] = (numeric_vector[4] - 0.608) / (1.01 - 0.608)
+        numeric_vector[5] = numeric_vector[5]  # no normalization
+        numeric_vector[6] = (numeric_vector[6]) / 133.53
+        numeric_vector[7] = (numeric_vector[7]) / 5009.43
+    except Exception as e:
+        raise RuntimeError(f"Normalization failed: {e}")
+
+    print("Numeric after normalization:", numeric_vector.tolist())
+
+    # map which image variable to which input index (in case input order differs)
+    # We'll iterate through input_details and set accordingly:
+    # numeric -> set numeric_vector, image inputs -> set image arrays in order
+    img_count = 0
     for i, d in enumerate(input_details):
         idx = d["index"]
         shape = d.get("shape", [])
-
-        if len(shape) == 2:  # numeric input
-            # -------- Normalization --------
-            print("Numeric input before normalization:", numeric_vector.tolist())
-            numeric_vector[0] = (numeric_vector[0] - 35) / (95 - 35)
-            numeric_vector[1] = (numeric_vector[1] - 200) / (1500 - 200)
-            numeric_vector[2] = (numeric_vector[2]) / 15
-            numeric_vector[3] = (numeric_vector[3] - 0.61) / (1.057 - 0.61)
-            numeric_vector[4] = (numeric_vector[4] - 0.608) / (1.01 - 0.608)
-            numeric_vector[5] = numeric_vector[5]  # no normalization
-            numeric_vector[6] = (numeric_vector[6]) / 133.53
-            numeric_vector[7] = (numeric_vector[7]) / 5009.43
-            print("Numeric input after normalization:", numeric_vector.tolist())
-
+        if hasattr(shape, "__len__") and len(shape) == 2:
+            # numeric input (shape [1, 8] expected)
             vec = numeric_vector.astype(d["dtype"])[None, :]
+            print(f"Setting numeric tensor at idx {idx}, shape set: {vec.shape}, dtype {d['dtype']}")
             interpreter.set_tensor(idx, vec)
+        elif hasattr(shape, "__len__") and len(shape) == 4:
+            # image input
+            if img_count == 0:
+                arr = imgB_arr
+            else:
+                arr = imgF_arr
+            arr_to_set = arr.astype(np.float32)[None, :, :, :]
+            print(f"Setting image tensor #{img_count} at idx {idx}, shape set: {arr_to_set.shape}, dtype {d['dtype']}")
+            interpreter.set_tensor(idx, arr_to_set)
+            img_count += 1
+        else:
+            raise RuntimeError(f"Unrecognized input shape: {shape}")
 
-        elif len(shape) == 4:  # image input
-            if i == 1:   # بعد از عددی → این imgB است
-                arr = imgB
-            else:        # بعدی → imgF است
-                arr = imgF
-            arr = arr.astype(np.float32)[None, :, :, :]
-            interpreter.set_tensor(idx, arr)
-
+    # run inference
     interpreter.invoke()
     out = interpreter.get_tensor(output_details[0]["index"])
     out = np.squeeze(out)
+    # if model outputs logits or softmax, we just take argmax and probability
     cls = int(np.argmax(out))
-    prob = float(out[cls])
+    prob = float(out[cls]) if out.size > 0 else float("nan")
     label = CLASS_LABELS[cls] if cls < len(CLASS_LABELS) else f"Class {cls}"
-    return {"label": label, "prob": prob, "raw": out.tolist()}
+
+    result = {"label": label, "prob": prob, "raw": out.tolist()}
+    return result, numeric_vector
 
 
 # -------------------
@@ -131,42 +188,80 @@ def run_inference(numeric_vector, imgB, imgF):
 # -------------------
 @app.route("/")
 def index():
-    h, w = required_image_size()
-    return render_template("index.html", imgw=w, imgh=h, labels=CLASS_LABELS)
+    return render_template("index.html")
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.json
-    try:
-        imgB_data = base64.b64decode(data["imageB"].split(",")[1])
-        imgF_data = base64.b64decode(data["imageF"].split(",")[1])
-    except Exception:
-        return jsonify({"error": "invalid image payload"}), 400
+    data = request.get_json(force=True)
+    print("🔸 Raw JSON received:", bool(data))
+    # safety checks
+    if not data:
+        return jsonify({"error": "No JSON body received"}), 400
 
-    H, W = required_image_size()
-    arrB, previewB = preprocess_image(imgB_data, (W, H))
-    arrF, previewF = preprocess_image(imgF_data, (W, H))
-
-    # Quick quality check
-    if np.mean(arrB) < 0.05 or np.mean(arrF) < 0.05:
-        return jsonify({"error": "Image too dark, invalid capture"}), 400
-
+    # numeric inputs
     nums = data.get("numbers", [])
     if not isinstance(nums, list) or len(nums) != 8:
-        return jsonify({"error": "need 8 numeric features"}), 400
+        return jsonify({"error": "Need 8 numeric features (numbers)"}), 400
     try:
         numeric_vector = np.array([float(x) if x != "" else 0.0 for x in nums], dtype=np.float32)
-    except Exception:
-        return jsonify({"error": "non-numeric feature detected"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Numeric parsing failed: {e}"}), 400
 
-    result = run_inference(numeric_vector, arrB, arrF)
+    # images base64 fields
+    imageB_b64 = data.get("imageB")
+    imageF_b64 = data.get("imageF")
+    if not imageB_b64 or not imageF_b64:
+        return jsonify({"error": "Both imageB and imageF must be provided"}), 400
 
-    return jsonify({
+    # decode bytes
+    try:
+        imgB_bytes = base64.b64decode(imageB_b64.split(",")[1])
+        imgF_bytes = base64.b64decode(imageF_b64.split(",")[1])
+    except Exception as e:
+        return jsonify({"error": f"Failed to decode base64 images: {e}"}), 400
+
+    # preprocess to model shape
+    H, W = required_image_size()
+    try:
+        arrB, previewB = preprocess_image_bytes(imgB_bytes, target_size=(H, W))
+        arrF, previewF = preprocess_image_bytes(imgF_bytes, target_size=(H, W))
+    except Exception as e:
+        return jsonify({"error": f"Image preprocessing failed: {e}"}), 400
+
+    # quick quality checks
+    if np.mean(arrB) < 0.01 or np.mean(arrF) < 0.01:
+        return jsonify({"error": "Images appear too dark or invalid (mean pixel very small)"}), 400
+
+    # run inference and get normalized vector
+    try:
+        result, normalized_vector = run_inference_and_debug(numeric_vector, arrB, arrF)
+    except Exception as e:
+        print("❌ Inference exception:", e)
+        return jsonify({"error": f"Inference failed: {e}"}), 500
+
+    # prepare debug info
+    debug = {
+        "numbers_raw": [float(x) for x in nums],
+        "numbers_normalized": normalized_vector.tolist(),
+        "imgB_shape": list(arrB.shape),
+        "imgF_shape": list(arrF.shape),
+    }
+
+    response = {
         "result": result,
         "previewB": previewB,
-        "previewF": previewF
-    })
+        "previewF": previewF,
+        "normalized": normalized_vector.tolist(),
+        "debug": debug
+    }
+
+    # additional convenience: top-level shortcut for old clients
+    response["label"] = result["label"]
+    response["prob"] = result["prob"]
+
+    print("🔸 Prediction result:", result)
+    return jsonify(response)
 
 
 @app.route("/healthz")
@@ -175,4 +270,5 @@ def healthz():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # debug True only for local dev
+    app.run(host="0.0.0.0", port=5000, debug=True)
