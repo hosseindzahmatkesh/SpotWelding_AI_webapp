@@ -95,9 +95,9 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
 
     # blur + threshold (this produces the 'thresholded & slightly smooth' look)
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
-    #thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY, 11, 2)
+    thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY, 11, 2)
 
-    _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
+    #_, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
     # resize to model expected
     H, W = target_size
