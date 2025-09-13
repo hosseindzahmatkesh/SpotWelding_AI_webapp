@@ -58,7 +58,7 @@ def apply_circle_gray_background(gray_img, center=None, radius=None):
     if center is None:
         center = (w // 2, h // 2)
     if radius is None:
-        radius = min(h, w) // 4  # default radius (tweakable)
+        radius = 110 #min(h, w) // 2  # default radius (tweakable)
     mask = np.zeros_like(gray_img, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     gray_bg = np.full_like(gray_img, 128)
@@ -86,7 +86,7 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
     h, w = gray.shape[:2]
     # choose radius relative to smaller dimension if not provided
     if circle_radius is None:
-        radius = min(h, w) // 4  # tweak if you need bigger/smaller
+        radius = 110 #min(h, w) // 2  # tweak if you need bigger/smaller
     else:
         radius = circle_radius
 
@@ -95,6 +95,8 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
 
     # blur + threshold (this produces the 'thresholded & slightly smooth' look)
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
+    #thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY, 11, 2)
+
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
     # resize to model expected
