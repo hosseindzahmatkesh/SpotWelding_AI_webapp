@@ -37,34 +37,49 @@ output_details = interpreter.get_output_details()
 # Utils
 # -------------------
 def required_image_size():
-    # ما همیشه می‌خوایم 256x256 باشه
+    for d in input_details:
+        shape = d.get("shape", [])
+        if hasattr(shape, "__len__") and len(shape) == 4:
+            return int(shape[1]), int(shape[2])
     return 256, 256
 
 
-def preprocess_image(img_bytes, target_size, return_stage="final"):
+def preprocess_image(img_bytes, target_size):
     """
-    Decode base64 image → grayscale → blur + threshold → resize → normalize
-    return_stage:
-        "final" → آماده برای مدل
-        "preview" → قبل از normalize (uint8 برای نمایش)
+    Decode base64 image, apply circle mask (inside: real, outside: gray),
+    then blur + threshold, resize, normalize.
     """
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     arr = np.array(img)
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape[:2]
 
-    # blur + threshold
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    # --- Circle mask: match overlay ---
+    mask = np.zeros_like(gray, dtype=np.uint8)
+    center = (w // 2, h // 2)
+    radius = 125
+    cv2.circle(mask, center, radius, 255, -1)
+
+    gray_bg = np.full_like(gray, 128)
+    masked = np.where(mask == 255, gray, gray_bg)
+
+    # --- Preprocess ---
+    blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
+    # Resize
     resized = cv2.resize(thresh, target_size)
 
-    if return_stage == "preview":
-        return resized  # uint8
-    else:
-        norm = resized / 255.0
-        norm = norm[:, :, np.newaxis]
-        return norm
+    # Normalize
+    norm = resized / 255.0
+    norm = norm[:, :, np.newaxis]  # add channel
 
+    # Also return a preview image (base64)
+    arr_uint8 = resized.astype(np.uint8)
+    _, buf = cv2.imencode(".png", arr_uint8)
+    b64 = base64.b64encode(buf).decode("utf-8")
+
+    return norm, "data:image/png;base64," + b64
 
 
 def run_inference(numeric_vector, imgB, imgF):
@@ -79,17 +94,17 @@ def run_inference(numeric_vector, imgB, imgF):
         shape = d.get("shape", [])
 
         if len(shape) == 2:  # numeric input
-            # -------------------
-            # Normalization
-            # -------------------
-            numeric_vector[0] = (numeric_vector[0] - 35) / (95 - 35)       # Pressure
-            numeric_vector[1] = (numeric_vector[1] - 200) / (1500 - 200)   # Welding Time
-            numeric_vector[2] = numeric_vector[2] / 15                     # Angle
-            numeric_vector[3] = (numeric_vector[3] - 0.61) / (1.057 - 0.61) # Thickness A
-            numeric_vector[4] = (numeric_vector[4] - 0.608) / (1.01 - 0.608) # Thickness B
-            numeric_vector[5] = numeric_vector[5]                           # Material (assume already categorical/encoded)
-            numeric_vector[6] = numeric_vector[6] / 133.53                  # Force
-            numeric_vector[7] = numeric_vector[7] / 5009.43                 # Current
+            # -------- Normalization --------
+            print("Numeric input before normalization:", numeric_vector.tolist())
+            numeric_vector[0] = (numeric_vector[0] - 35) / (95 - 35)
+            numeric_vector[1] = (numeric_vector[1] - 200) / (1500 - 200)
+            numeric_vector[2] = (numeric_vector[2]) / 15
+            numeric_vector[3] = (numeric_vector[3] - 0.61) / (1.057 - 0.61)
+            numeric_vector[4] = (numeric_vector[4] - 0.608) / (1.01 - 0.608)
+            numeric_vector[5] = numeric_vector[5]  # no normalization
+            numeric_vector[6] = (numeric_vector[6]) / 133.53
+            numeric_vector[7] = (numeric_vector[7]) / 5009.43
+            print("Numeric input after normalization:", numeric_vector.tolist())
 
             vec = numeric_vector.astype(d["dtype"])[None, :]
             interpreter.set_tensor(idx, vec)
@@ -120,24 +135,6 @@ def index():
     return render_template("index.html", imgw=w, imgh=h, labels=CLASS_LABELS)
 
 
-@app.route("/preview", methods=["POST"])
-def preview():
-    data = request.json
-    try:
-        raw = base64.b64decode(data["image"].split(",")[1])
-    except Exception:
-        return jsonify({"error": "invalid image payload"}), 400
-
-    H, W = required_image_size()
-    arr = preprocess_image(raw, (W, H), return_stage="preview")
-
-    # arr → base64
-    _, buf = cv2.imencode(".png", arr)
-    b64 = base64.b64encode(buf).decode("utf-8")
-    return jsonify({"processed": "data:image/png;base64," + arr})
-
-
-
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -148,8 +145,12 @@ def predict():
         return jsonify({"error": "invalid image payload"}), 400
 
     H, W = required_image_size()
-    arrB = preprocess_image(imgB_data, (W, H))
-    arrF = preprocess_image(imgF_data, (W, H))
+    arrB, previewB = preprocess_image(imgB_data, (W, H))
+    arrF, previewF = preprocess_image(imgF_data, (W, H))
+
+    # Quick quality check
+    if np.mean(arrB) < 0.05 or np.mean(arrF) < 0.05:
+        return jsonify({"error": "Image too dark, invalid capture"}), 400
 
     nums = data.get("numbers", [])
     if not isinstance(nums, list) or len(nums) != 8:
@@ -160,7 +161,12 @@ def predict():
         return jsonify({"error": "non-numeric feature detected"}), 400
 
     result = run_inference(numeric_vector, arrB, arrF)
-    return jsonify(result)
+
+    return jsonify({
+        "result": result,
+        "previewB": previewB,
+        "previewF": previewF
+    })
 
 
 @app.route("/healthz")
