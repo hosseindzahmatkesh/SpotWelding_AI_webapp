@@ -68,7 +68,7 @@
     .preview {
       width: 110px;
       height: 110px;
-      object-fit: cover;
+      object-fit: contain; /* تغییر از cover به contain برای حفظ نسبت تصویر */
       border-radius: 6px;
       border: 1px solid #444;
       background: #222;
@@ -109,7 +109,7 @@
         <button id="captureB" class="btn btn-sm btn-primary">Capture Image B</button>
         <button id="captureF" class="btn btn-sm btn-secondary">Capture Image F</button>
       </div>
-      <div class="small-muted">Make sure camera permission is granted. Use rear camera for best result.</div>
+      <div class="small-muted">Use rear camera for best result.</div>
     </div>
 
     <div class="d-flex gap-3 mb-3">
@@ -121,12 +121,9 @@
         <div>Raw preview F</div>
         <img id="previewF" class="preview" src="" alt="raw F">
       </div>
-
       <div style="flex:1;">
-        <div class="small-muted mb-1">Processed (what is sent to model)</div>
-        <div id="processedPreviews" style="display:flex; gap:8px;">
-          <!-- processed previews inserted here -->
-        </div>
+        <div class="small-muted mb-1">Processed (sent to model)</div>
+        <div id="processedPreviews" style="display:flex; gap:8px;"></div>
       </div>
     </div>
 
@@ -149,7 +146,6 @@
       <div class="small-muted">Normalized Inputs Sent to Model:</div>
       <pre id="normalized">-</pre>
     </div>
-
   </div>
 
   <canvas id="canvas" style="display:none;"></canvas>
@@ -164,24 +160,16 @@
     const resultProb = document.getElementById('resultProb');
     const status = document.getElementById('status');
     const normalizedBox = document.getElementById('normalized');
-
     let imgB = null, imgF = null;
 
-    // request rear camera if available; fallback to default
+    // rear camera
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }, audio: false
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } });
         video.srcObject = stream;
       } catch (err) {
-        // fallback: any camera
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          video.srcObject = stream;
-        } catch (e) {
-          alert("Camera not available: " + e.message);
-        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
       }
     }
     startCamera();
@@ -205,14 +193,12 @@
 
     async function predict() {
       if (!imgB || !imgF) {
-        alert("Please capture both B and F images.");
+        alert("Capture both images first");
         return;
       }
-      // collect numbers
       const nums = [];
       for (let i = 0; i < 8; i++) {
-        const val = document.getElementById('n' + i).value;
-        nums.push(val === "" ? "" : val);
+        nums.push(document.getElementById('n' + i).value || "");
       }
 
       status.innerText = "Status: sending to server...";
@@ -222,69 +208,55 @@
 
       const payload = { imageB: imgB, imageF: imgF, numbers: nums };
 
-      try {
-        const resp = await fetch('/predict', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await resp.json();
+      const resp = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
 
-        if (data.error) {
-          status.innerText = "Status: error - " + data.error;
-          alert("Server error: " + data.error);
-          return;
-        }
+      if (data.error) {
+        status.innerText = "Error: " + data.error;
+        return;
+      }
 
-        // show processed previews (what the model received)
-        processedPreviews.innerHTML = "";
-        if (data.previewB) {
-          const i = document.createElement('img');
-          i.src = data.previewB;
-          i.className = 'preview';
-          processedPreviews.appendChild(i);
-        }
-        if (data.previewF) {
-          const j = document.createElement('img');
-          j.src = data.previewF;
-          j.className = 'preview';
-          processedPreviews.appendChild(j);
-        }
+      // processed previews (aspect ratio preserved, padded by server)
+      if (data.previewB) {
+        const i = document.createElement('img');
+        i.src = data.previewB;
+        i.className = 'preview';
+        processedPreviews.appendChild(i);
+      }
+      if (data.previewF) {
+        const j = document.createElement('img');
+        j.src = data.previewF;
+        j.className = 'preview';
+        processedPreviews.appendChild(j);
+      }
 
-        // show normalized vector
-        if (data.normalized) {
-          normalizedBox.innerText = JSON.stringify(data.normalized, null, 2);
-        }
+      if (data.normalized) {
+        normalizedBox.innerText = JSON.stringify(data.normalized, null, 2);
+      }
 
-        // result display
-        const res = data.result;
-        status.innerText = `Status: predicted ${res.label} (${(res.prob*100).toFixed(1)}%)`;
+      const res = data.result;
+      status.innerText = `Predicted: ${res.label} (${(res.prob*100).toFixed(1)}%)`;
+      resultIcon.style.display = "block";
+      resultProb.style.display = "block";
+      resultProb.innerText = (res.prob*100).toFixed(1) + "%";
 
-        // icon inside circle
-        resultIcon.style.display = "block";
-        resultProb.style.display = "block";
-        resultProb.innerText = (res.prob*100).toFixed(1) + "%";
-        if (res.label === "Good") {
-          resultIcon.innerText = "✔";
-          resultIcon.style.color = "lime";
-        } else if (res.label === "Bad") {
-          resultIcon.innerText = "✖";
-          resultIcon.style.color = "red";
-        } else {
-          resultIcon.innerText = "⚠";
-          resultIcon.style.color = "orange";
-        }
-
-        // debug info (console)
-        console.log("server debug:", data.debug);
-      } catch (err) {
-        status.innerText = "Status: request failed";
-        alert("Request failed: " + err);
-        console.error(err);
+      if (res.label === "Good") {
+        resultIcon.innerText = "✔";
+        resultIcon.style.color = "lime";
+      } else if (res.label === "Bad") {
+        resultIcon.innerText = "✖";
+        resultIcon.style.color = "red";
+      } else {
+        resultIcon.innerText = "⚠";
+        resultIcon.style.color = "orange";
       }
     }
 
-    document.getElementById('predictBtn').addEventListener('click', predict);
+    document.getElementById('predictBtn').onclick = predict;
   </script>
 </body>
 </html>
