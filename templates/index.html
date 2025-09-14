@@ -188,18 +188,39 @@
 
     // رسم دایره روی overlayCanvas
     function drawOverlay() {
-      overlayCanvas.width = video.videoWidth;
-      overlayCanvas.height = video.videoHeight;
       ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      const cx = overlayCanvas.width / 2;
-      const cy = overlayCanvas.height / 2;
-      const r = 110; // همون ابعاد دایره قبلی
-      ctxOverlay.strokeStyle = "limegreen";
-      ctxOverlay.lineWidth = 3;
-      ctxOverlay.beginPath();
-      ctxOverlay.arc(cx, cy, r, 0, 2 * Math.PI);
-      ctxOverlay.stroke();
-      requestAnimationFrame(drawOverlay);
+
+     // نسبت تصویر واقعی ویدیو
+     const videoAspect = video.videoWidth / video.videoHeight;
+     const canvasAspect = overlayCanvas.width / overlayCanvas.height;
+
+     let drawWidth, drawHeight, offsetX, offsetY;
+
+     if (canvasAspect > videoAspect) {
+     // کانواس عریض‌تر از ویدیو → بالا/پایین خالی می‌مونه
+     drawHeight = overlayCanvas.height;
+     drawWidth = videoAspect * drawHeight;
+     offsetX = (overlayCanvas.width - drawWidth) / 2;
+     offsetY = 0;
+     } else {
+     // کانواس باریک‌تر از ویدیو → چپ/راست خالی می‌مونه
+     drawWidth = overlayCanvas.width;
+     drawHeight = drawWidth / videoAspect;
+     offsetX = 0;
+     offsetY = (overlayCanvas.height - drawHeight) / 2;
+     }
+
+     // مرکز دقیق ویدیو
+     const cx = offsetX + drawWidth / 2;
+     const cy = offsetY + drawHeight / 2;
+
+     const r = Math.min(drawWidth, drawHeight) * 0.2; // دایره متناسب با ابعاد ویدیو
+     ctxOverlay.strokeStyle = "limegreen";
+     ctxOverlay.lineWidth = 3;
+     ctxOverlay.beginPath();
+     ctxOverlay.arc(cx, cy, r, 0, 2 * Math.PI);
+     ctxOverlay.stroke();
+     requestAnimationFrame(drawOverlay);
     }
     
 
