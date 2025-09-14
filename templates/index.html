@@ -177,6 +177,12 @@
           alert("Camera not available: " + e.message);
         }
       }
+      video.addEventListener('loadedmetadata', () => {
+      overlayCanvas.width = video.videoWidth;
+      overlayCanvas.height = video.videoHeight;
+      drawOverlay();
+      });
+
     }
     startCamera();
 
@@ -195,7 +201,7 @@
       ctxOverlay.stroke();
       requestAnimationFrame(drawOverlay);
     }
-    requestAnimationFrame(drawOverlay);
+    
 
     function captureToDataURL() {
       canvas.width = video.videoWidth || 640;
