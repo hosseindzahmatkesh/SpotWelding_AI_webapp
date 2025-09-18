@@ -86,8 +86,8 @@ def remove_green(image):
     lower = np.array([35, 40, 40])   # محدوده سبز روشن
     upper = np.array([85, 255, 255]) # محدوده سبز تیره
     mask = cv2.inRange(hsv, lower, upper)
-    # جایگزینی پیکسل‌های سبز با خاکستری
-    image[mask > 0] = (128, 128, 128)
+    # جایگزینی پیکسل‌های سبز با سفید
+    image[mask > 0] = (0, 0, 0)
     return image
 
 def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None):
@@ -112,23 +112,22 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=None
 
     h, w = gray.shape[:2]
     if circle_radius is None:
-        radius = 180
+       # radius = 180
     else:
         radius = circle_radius
 
-    center = (w // 2, h // 2)
-    masked = apply_circle_gray_background(gray, center=center, radius=radius)
+    #center = (w // 2, h // 2)
+    #masked = apply_circle_gray_background(gray, center=center, radius=radius)
 
     # blur + threshold
-    blur = cv2.GaussianBlur(masked, (3, 3), 0)
-    thresh = cv2.adaptiveThreshold(
-        blur, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 11, 2
-    )
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    _,thresh = cv2.threshold(
+        blur, 40, 255,
+        cv2.THRESH_BINARY,
+        )
 
     # resize with padding (حفظ نسبت تصویر)
-    processed = resize_with_padding(thresh, target_size)
+    processed = cv2.resize(thresh,(256,256))
 
     # --- Debug: ذخیره تصویر threshold برای بررسی ---
     cv2.imwrite("debug_thresh.png", processed)
