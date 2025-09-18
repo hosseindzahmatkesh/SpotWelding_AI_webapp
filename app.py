@@ -37,7 +37,7 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-CLASS_LABELS = ["Bad", "Good", "Explode"]
+CLASS_LABELS = ["Bad", "Explode", "Good"]
 
 
 # -------------------
