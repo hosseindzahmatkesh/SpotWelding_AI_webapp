@@ -97,7 +97,7 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    h, w = thresh.shape
+    h, w = thresh.shape[:2]
     radius = min(h, w) // 3
     center = (w // 2, h // 2)
     mask = np.zeros_like(gray, dtype=np.uint8)
