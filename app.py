@@ -88,39 +88,45 @@ def remove_green(image):
 
 
 def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180):
-    arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        raise ValueError("cv2.imdecode failed")
+    #arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    #if img_bytes is None:
+        #raise ValueError("cv2.imdecode failed")
 
-    arr = remove_green(arr)
-    gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
-
-    h, w = gray.shape[:2]
-    mask = np.zeros_like(gray, dtype=np.uint8)
-    cv2.circle(mask, (w//2, h//2), circle_radius, 255, -1)
-
-    # --- اول ماسک سیاه بیرون دایره ---
-    masked = np.where(mask == 255, gray, 0)
-
-    # --- فیلتر و آستانه ---
-    blur = cv2.GaussianBlur(masked, (3, 3), 0)
+    #arr = remove_green(arr)
+    gray = cv2.cvtColor(img_bytes, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (3,3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
+    h, w = thresh.shape
+    radius = min(h, w) // 3
+    center = (w // 2, h // 2)
+    mask = np.zeros_like(gray, dtype=np.uint8)
+    cv2.circle(mask, center, radius, 255, -1)
+    circle_only = np.where(mask == 255, thresh, 0)
+
+
+    # --- اول ماسک سیاه بیرون دایره ---
+    #masked = np.where(mask == 255, gray, 0)
+
+    # --- فیلتر و آستانه ---
+    #blur = cv2.GaussianBlur(masked, (3, 3), 0)
+    #_, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
+
     # --- دوباره ماسک برای اطمینان ---
-    final = np.where(mask == 255, thresh, 0)
+    #final = np.where(mask == 255, thresh, 0)
 
     # resize
-    processed = cv2.resize(final, target_size)
+    resized = cv2.resize(circle_only, (256,256))
 
     # Debug save
-    cv2.imwrite("debug_thresh.png", processed)
+    cv2.imwrite("debug_thresh.png", resized)
 
     # Normalize
-    norm = processed.astype(np.float32) / 255.0
+    norm = resized.astype(np.float32) / 255.0
     norm = norm[:, :, np.newaxis]
 
     # Make preview
-    _, buf = cv2.imencode(".png", processed.astype(np.uint8))
+    _, buf = cv2.imencode(".png", resized.astype(np.uint8))
     b64 = base64.b64encode(buf).decode("utf-8")
     preview_dataurl = "data:image/png;base64," + b64
 
