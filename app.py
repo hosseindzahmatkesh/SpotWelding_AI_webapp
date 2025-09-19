@@ -41,51 +41,6 @@ output_details = interpreter.get_output_details()
 # ===================
 # Utilities
 # ===================
-def required_image_size():
-    """Detect image input size from TFLite model"""
-    for d in input_details:
-        shape = d.get("shape", [])
-        if hasattr(shape, "__len__") and len(shape) == 4:
-            return int(shape[1]), int(shape[2])
-    return 256, 256
-
-#def apply_circle_black_background(gray_img, center=None, radius=None):
-    """داخل دایره تصویر اصلی بمونه، بیرون دایره مشکی (0) بشه"""
-    h, w = gray_img.shape[:2]
-    if center is None:
-        center = (w // 2, h // 2)
-    if radius is None:
-        radius = min(h, w) // 2   # نصف ضلع کوچک تصویر
-    mask = np.zeros_like(gray_img, dtype=np.uint8)
-    cv2.circle(mask, center, radius, 255, -1)
-    #black_bg = np.zeros_like(gray_img, dtype=np.uint8)
-    masked = np.where(mask == 255, gray_img, 0)
-    return masked
-
-
-#def apply_circle_mask(gray_img, radius=180):
-    """
-    Only keep inside circle, set outside to black (0).
-    """
-    h, w = gray_img.shape[:2]
-    center = (w // 2, h // 2)
-    mask = np.zeros_like(gray_img, dtype=np.uint8)
-    cv2.circle(mask, center, radius, 255, -1)
-    masked = np.where(mask == 255, gray_img, 0)
-    return masked
-
-
-#def remove_green(image):
-    """
-    Remove green overlay by replacing green pixels with black.
-    """
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower = np.array([35, 40, 40])   # محدوده سبز
-    upper = np.array([85, 255, 255])
-    mask = cv2.inRange(hsv, lower, upper)
-    image[mask > 0] = (0, 0, 0)
-    return image
-
 
 def preprocess_image_bytes(img_bytes):
     #arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
@@ -103,21 +58,8 @@ def preprocess_image_bytes(img_bytes):
     mask = np.zeros_like(thresh, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     circle_only = np.where(mask == 255, thresh, 0)
-
-
-    # --- اول ماسک سیاه بیرون دایره ---
-    #masked = np.where(mask == 255, gray, 0)
-
-    # --- فیلتر و آستانه ---
-    #blur = cv2.GaussianBlur(masked, (3, 3), 0)
-    #_, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
-
-    # --- دوباره ماسک برای اطمینان ---
-    #final = np.where(mask == 255, thresh, 0)
-
     # resize
     resized = cv2.resize(circle_only, (256,256))
-
     # Debug save
     cv2.imwrite("debug_thresh.png", resized)
 
