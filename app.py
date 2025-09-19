@@ -29,8 +29,12 @@ app = Flask(__name__)
 CLASS_LABELS = ["Bad", "Explode", "Good"]
 
 # ---- Load TFLite model ----
+if not os.path.exists(MODEL_PATH) and gdown is not None:
+    print("Downloading model...")
+    gdown.download(MODEL_GDRIVE_URL, MODEL_PATH, quiet=False)
+
 if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"{MODEL_PATH} not found. Put your tflite model at project root.")
+    raise FileNotFoundError(f"{MODEL_PATH} not found. Put your tflite model at project root or enable gdown.")
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
