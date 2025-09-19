@@ -47,12 +47,11 @@ output_details = interpreter.get_output_details()
 # ===================
 
 def preprocess_image_bytes(img_bytes):
-    #arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-    #if img_bytes is None:
-        #raise ValueError("cv2.imdecode failed")
+    arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise ValueError("cv2.imdecode failed")
 
-    #arr = remove_green(arr)
-    gray = cv2.cvtColor(img_bytes, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
@@ -62,21 +61,20 @@ def preprocess_image_bytes(img_bytes):
     mask = np.zeros_like(thresh, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     circle_only = np.where(mask == 255, thresh, 0)
-    # resize
+
     resized = cv2.resize(circle_only, (256,256))
-    # Debug save
+
     cv2.imwrite("debug_thresh.png", resized)
 
-    # Normalize
     norm = resized.astype(np.float32) / 255.0
     norm = norm[:, :, np.newaxis]
 
-    # Make preview
     _, buf = cv2.imencode(".png", resized.astype(np.uint8))
     b64 = base64.b64encode(buf).decode("utf-8")
     preview_dataurl = "data:image/png;base64," + b64
 
     return norm, preview_dataurl
+
 
 
 # ===================
