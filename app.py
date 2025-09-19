@@ -58,8 +58,8 @@ def apply_circle_black_background(gray_img, center=None, radius=None):
         radius = min(h, w) // 2   # نصف ضلع کوچک تصویر
     mask = np.zeros_like(gray_img, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
-    black_bg = np.zeros_like(gray_img, dtype=np.uint8)
-    masked = np.where(mask == 255, gray_img, black_bg)
+    #black_bg = np.zeros_like(gray_img, dtype=np.uint8)
+    masked = np.where(mask == 255, gray_img, 0)
     return masked
 
 
