@@ -49,7 +49,7 @@ def required_image_size():
             return int(shape[1]), int(shape[2])
     return 256, 256
 
-def apply_circle_black_background(gray_img, center=None, radius=None):
+#def apply_circle_black_background(gray_img, center=None, radius=None):
     """داخل دایره تصویر اصلی بمونه، بیرون دایره مشکی (0) بشه"""
     h, w = gray_img.shape[:2]
     if center is None:
@@ -63,7 +63,7 @@ def apply_circle_black_background(gray_img, center=None, radius=None):
     return masked
 
 
-def apply_circle_mask(gray_img, radius=180):
+#def apply_circle_mask(gray_img, radius=180):
     """
     Only keep inside circle, set outside to black (0).
     """
@@ -75,7 +75,7 @@ def apply_circle_mask(gray_img, radius=180):
     return masked
 
 
-def remove_green(image):
+#def remove_green(image):
     """
     Remove green overlay by replacing green pixels with black.
     """
@@ -87,7 +87,7 @@ def remove_green(image):
     return image
 
 
-def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180):
+def preprocess_image_bytes(img_bytes):
     #arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
     #if img_bytes is None:
         #raise ValueError("cv2.imdecode failed")
@@ -100,7 +100,7 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180)
     h, w = thresh.shape[:2]
     radius = min(h, w) // 3
     center = (w // 2, h // 2)
-    mask = np.zeros_like(gray, dtype=np.uint8)
+    mask = np.zeros_like(thresh, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     circle_only = np.where(mask == 255, thresh, 0)
 
@@ -204,9 +204,9 @@ def predict():
     imgB_bytes = base64.b64decode(imageB_b64.split(",")[1])
     imgF_bytes = base64.b64decode(imageF_b64.split(",")[1])
 
-    H, W = required_image_size()
-    arrB, previewB = preprocess_image_bytes(imgB_bytes, target_size=(H, W))
-    arrF, previewF = preprocess_image_bytes(imgF_bytes, target_size=(H, W))
+    #H, W = (256,256)
+    arrB, previewB = preprocess_image_bytes(imgB_bytes)
+    arrF, previewF = preprocess_image_bytes(imgF_bytes)
 
     result, normalized_vector = run_inference_and_debug(numeric_vector, arrB, arrF)
 
