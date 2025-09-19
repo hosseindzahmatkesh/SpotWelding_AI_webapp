@@ -49,6 +49,19 @@ def required_image_size():
             return int(shape[1]), int(shape[2])
     return 256, 256
 
+def apply_circle_black_background(gray_img, center=None, radius=None):
+    """داخل دایره تصویر اصلی بمونه، بیرون دایره مشکی (0) بشه"""
+    h, w = gray_img.shape[:2]
+    if center is None:
+        center = (w // 2, h // 2)
+    if radius is None:
+        radius = min(h, w) // 2   # نصف ضلع کوچک تصویر
+    mask = np.zeros_like(gray_img, dtype=np.uint8)
+    cv2.circle(mask, center, radius, 255, -1)
+    black_bg = np.zeros_like(gray_img, dtype=np.uint8)
+    masked = np.where(mask == 255, gray_img, black_bg)
+    return masked
+
 
 def apply_circle_mask(gray_img, radius=180):
     """
@@ -86,7 +99,8 @@ def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180)
     arr = remove_green(arr)
 
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
-    masked = apply_circle_mask(gray, radius=circle_radius)
+    h, w = gray.shape[:2]
+    masked = apply_circle_black_background(gray, center=(w//2, h//2), radius=180)
 
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
