@@ -88,24 +88,29 @@ def remove_green(image):
 
 
 def preprocess_image_bytes(img_bytes, target_size=(256, 256), circle_radius=180):
-    """
-    Decode base64 -> remove green -> gray -> mask -> blur + threshold -> resize -> normalize
-    Returns: (normalized_array, preview_base64_png)
-    """
     arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
     if arr is None:
         raise ValueError("cv2.imdecode failed")
 
     arr = remove_green(arr)
-
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape[:2]
-    masked = apply_circle_black_background(gray, center=(w//2, h//2), radius=180)
 
+    h, w = gray.shape[:2]
+    mask = np.zeros_like(gray, dtype=np.uint8)
+    cv2.circle(mask, (w//2, h//2), circle_radius, 255, -1)
+
+    # --- اول ماسک سیاه بیرون دایره ---
+    masked = np.where(mask == 255, gray, 0)
+
+    # --- فیلتر و آستانه ---
     blur = cv2.GaussianBlur(masked, (3, 3), 0)
     _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    processed = cv2.resize(thresh, target_size)
+    # --- دوباره ماسک برای اطمینان ---
+    final = np.where(mask == 255, thresh, 0)
+
+    # resize
+    processed = cv2.resize(final, target_size)
 
     # Debug save
     cv2.imwrite("debug_thresh.png", processed)
