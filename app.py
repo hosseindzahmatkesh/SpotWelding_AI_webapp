@@ -65,7 +65,7 @@ def preprocess_image_bytes(img_bytes):
 
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
-    _, thresh = cv2.threshold(blur, 0, 255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    thresh = cv2.adaptiveThreshold(blur, 255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11, 2)
     h, w = thresh.shape[:2]
     radius = min(h, w) // 3
     center = (w // 2, h // 2)
