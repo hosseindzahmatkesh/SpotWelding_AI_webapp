@@ -41,6 +41,18 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
+def resize_with_padding(img, target_size=(256,256)):
+    h, w = img.shape[:2]
+    th, tw = target_size
+    scale = min(tw/w, th/h)
+    nh, nw = int(h*scale), int(w*scale)
+    resized = cv2.resize(img, (nw, nh))
+
+    canvas = np.zeros((th, tw), dtype=img.dtype)  # پس‌زمینه مشکی
+    top = (th - nh) // 2
+    left = (tw - nw) // 2
+    canvas[top:top+nh, left:left+nw] = resized
+    return canvas
 
 # ===================
 # Utilities
@@ -53,8 +65,7 @@ def preprocess_image_bytes(img_bytes):
 
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
-    _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
-
+    _, thresh = cv2.threshold(blur, 0, 255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     h, w = thresh.shape[:2]
     radius = min(h, w) // 3
     center = (w // 2, h // 2)
@@ -62,7 +73,7 @@ def preprocess_image_bytes(img_bytes):
     cv2.circle(mask, center, radius, 255, -1)
     circle_only = np.where(mask == 255, thresh, 0)
 
-    resized = cv2.resize(circle_only, (256,256))
+    resized = resize_with_padding(circle_only, (256,256))
 
     cv2.imwrite("debug_thresh.png", resized)
 
