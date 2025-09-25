@@ -66,7 +66,7 @@ def preprocess_image_bytes(img_bytes):
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
     thresh = cv2.adaptiveThreshold(blur, 255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11, 2)
-    kernel = np.ones((5, 5), np.uint8)   # سایز ۵x۵ برای حذف نویزهای ریز
+    kernel = np.ones((10, 10), np.uint8)   # سایز ۵x۵ برای حذف نویزهای ریز
     cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
     cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
     h, w = thresh.shape[:2]
