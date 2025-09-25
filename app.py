@@ -66,10 +66,13 @@ def preprocess_image_bytes(img_bytes):
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3,3), 0)
     thresh = cv2.adaptiveThreshold(blur, 255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11, 2)
+    kernel = np.ones((5, 5), np.uint8)   # سایز ۵x۵ برای حذف نویزهای ریز
+    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
     h, w = thresh.shape[:2]
     radius = (min(h, w) // 7)*2
     center = (w // 2, h // 2)
-    mask = np.zeros_like(thresh, dtype=np.uint8)
+    mask = np.zeros_like(cleaned, dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
     circle_only = np.where(mask == 255, thresh, 0)
 
